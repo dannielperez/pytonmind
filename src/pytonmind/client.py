@@ -157,13 +157,40 @@ class TonmindClient:
             )
         return out
 
-    def set_sip_server(self, address: str, port: int = 5060, account: int = 0) -> dict:
-        """Point a SIP account's server at ``address`` (login first for writes)."""
-        return self.set_config("sip", {
-            f"sip{account}_serveraddr": address,
-            f"sip{account}_serverport": str(port),
-            f"sip{account}_enable": "1",
-        })
+    # Fields the firmware's ``sip.set`` echoes back verbatim; we preserve them
+    # on a server-only change so a full-replace write does not blank them.
+    _SIP_PRESERVE = ("protocol", "displayname", "authname", "username",
+                     "expires", "regtry", "keepalive", "buttondest", "ringtone",
+                     "autoanswer", "delaytime", "proxyenable", "proxyaddr",
+                     "proxyport", "nattype", "stunserver", "stunport",
+                     "turnserver", "turnport", "callduration")
+
+    def set_sip_server(self, address: str, port: int = 5060, account: int = 0,
+                       *, password: str | None = None) -> dict:
+        """Point a SIP account's server at ``address`` (login first for writes).
+
+        The firmware's ``sip.set`` is a **full-replace** keyed by ``id`` — it
+        does NOT do per-field patching, so any field omitted from the POST is
+        cleared. ``sip.get`` also **masks the SIP password** (returns ``""``),
+        so a naive read-modify-write silently wipes the account's auth secret
+        and the speaker drops to REG-FAIL. We therefore re-supply every field
+        read back from the device and REQUIRE ``password`` unless the device
+        genuinely has none. Pass the ext's SIP secret to change the server.
+        """
+        cur = self.get_config("sip").get(f"sip{account}") or {}
+        stored_pw = cur.get("password") or ""
+        pw = password if password is not None else stored_pw
+        if not pw:
+            raise TonmindError(
+                f"{self.host}: refusing to write sip{account} with an empty "
+                "password — sip.get masks the secret, so a server-only change "
+                "needs the ext's SIP secret passed as password=...")
+        fields = {"id": account, "enable": 1, "serveraddr": address,
+                  "serverport": str(port), "password": pw}
+        for k in self._SIP_PRESERVE:
+            if k in cur and cur[k] != "":
+                fields[k] = cur[k]
+        return self.set_config("sip", fields)
 
     # ── control API (/api/*) ────────────────────────────────────────
     def _api(self, path: str, **params) -> requests.Response:
