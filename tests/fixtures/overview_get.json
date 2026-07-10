@@ -1,0 +1,11 @@
+{
+  "result": 0,
+  "reason": "OK",
+  "data": {
+    "serialnumber": "TM2504SIP-S21-112",
+    "version": "CS20-V3.4.6N",
+    "uid": "00112233AABB",
+    "sip1status": "REG SUCCESS",
+    "sip2status": "REG FAIL"
+  }
+}
